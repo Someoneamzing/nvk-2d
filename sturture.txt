@@ -1,0 +1,38 @@
+VkBuffer[VK_BUFFER_USAGE_VERTEX_BUFFER_BIT] vertexBuffer;
+
+[------------- triangle vertices -------------|------------- line vertices -------------]
+ <-------- triangleVertices.capacity --------> <-------- lineVertices.capacity -------->
+
+
+VkBuffer[VK_BUFFER_USAGE_INDEX_BUFFER_BIT] indexBuffer;
+
+[------------- triangle indices -------------|------------- line indices -------------]
+ <-------- triangleIndices.capacity --------> <-------- lineIndices.capacity -------->
+
+
+VkBuffer[VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT] indirectDrawBuffer;
+
+[----- triangle draw data -----|----- line draw data -----]
+ <--- DrawCommandData.size ---> <- DrawCommandData.size ->
+
+
+
+
+
+//Alternative Method (CPU Line Primitive Calculations)
+VkBuffer[VK_BUFFER_USAGE_VERTEX_BUFFER_BIT] vertexBuffer;
+
+[-------------------------- triangle vertices --------------------------]
+ <--------------------- triangleVertices.capacity --------------------->
+
+
+VkBuffer[VK_BUFFER_USAGE_INDEX_BUFFER_BIT] indexBuffer;
+
+[-------------------------- triangle indices --------------------------]
+ <--------------------- triangleIndices.capacity --------------------->
+
+
+VkBuffer[VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT] indirectDrawBuffer;
+
+[----- triangle draw data -----]
+ <--- DrawCommandData.size --->

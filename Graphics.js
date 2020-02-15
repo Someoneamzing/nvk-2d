@@ -1222,17 +1222,19 @@ class GraphicsClass {
     let run = font.layout(text);
     this.beginPath();
     this.save();
-    this.scale(.1,.1);
+    this.scale(1/64, 1/64);
     for (let charI in run.glyphs){
       let glyph = run.glyphs[charI];
       let pos = run.positions[charI];
       this.save();
       this.translate(pos.xOffset, pos.yOffset);
+      this.beginPath();
+      console.log(text.charAt(charI) + ": " + glyph.path.toFunction().toString());
       glyph.path.toFunction()(this);
       this.restore();
       this.fill();
-      console.log(text.charAt(charI) + ": " + glyph.path.toFunction().toString());
-      this.translate(pos.xAdvance, pos.yAdvance);
+      console.log(this.indexCount);
+      this.translate(pos.xAdvance/64, pos.yAdvance/64);
     }
     this.restore();
     // TODO: Add transform matrix and stack.
@@ -1466,7 +1468,7 @@ class GraphicsClass {
   }
 
   moveTo(x, y){
-    // console.log(`moveTo(${x}, ${y})`);
+    console.log(`moveTo(${x}, ${y})`);
     this.#subPath.push([this.getTransform().mult(new vec2(x, y))]);
   }
 
@@ -1504,16 +1506,25 @@ class GraphicsClass {
   }
 
   quadraticCurveTo(px, py, x, y){
+    console.log(`quadraticCurveTo(${px}, ${py}, ${x}, ${y})`);
     let p = this.getTransform().mult(new vec2(px, py));
+    console.log("1");
     let end = this.getTransform().mult(new vec2(x, y));
+    console.log("1");
     let subSubPath = this.#subPath[this.#subPath.length - 1];
+    console.log("1");
     let start = subSubPath[subSubPath.length - 1];
+    console.log("1");
     let C = (t)=>{
       return lerp(lerp(start, p, t),lerp(p, end, t),t);
     }
-    let numSegments = Math.ceil(p.sub(start).mag2() / this.#curveGamma);
+    console.log("1");
+    let numSegments = Math.ceil(p.sub(start).mag() / this.#curveGamma);
+    console.log(numSegments);
     for (let i = 0; i < numSegments; i ++) {
+      // console.log("1");
       subSubPath.push(C(1/numSegments * i));
+      // console.log("1");
     }
   }
 

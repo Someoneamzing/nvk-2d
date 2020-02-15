@@ -30,10 +30,10 @@ class TestGame extends Engine.Game {
     // Graphics.noStroke();
 
     //Text tests:
-    // Graphics.fillColor(new vec4(1,0.5,0.0,1.0));
-    // Graphics.strokeColor(new vec4(0.0,1,1, 1.0));
-    // Graphics.strokeWeight(2);
-    // Graphics.text("e", 0,0);
+    Graphics.fillColor(new vec4(1,0.5,0.0,1.0));
+    Graphics.strokeColor(new vec4(0.0,1,1, 1.0));
+    Graphics.strokeWeight(2);
+    Graphics.text("llol", 0,0);
     //-------------------------
 
     //Transform tests
@@ -52,16 +52,31 @@ class TestGame extends Engine.Game {
     // Graphics.bezierCurveTo(0,200, 200, 200, 200, 0);
     // Graphics.closePath();
     // Graphics.stroke();
-    Graphics.strokeWeight(1)
-    Graphics.fillColor(new vec4(1,0,0,1))
-    Graphics.translate(100, 200);
-    Graphics.beginPath();
-    Graphics.moveTo(0,0);
-    Graphics.arc(0,0,10,0,2*Math.PI, false);
-    Graphics.fill();
-    Graphics.restore();
-    Graphics.fillColor(new vec4(.5,.5,.5,1));
-    Graphics.fill();
+    // Graphics.strokeWeight(1)
+    // Graphics.fillColor(new vec4(1,0,0,1))
+    // Graphics.translate(100, 200);
+    // Graphics.beginPath();
+    // Graphics.scale(2,2);
+    // Graphics.arc(0,0,10,0,2*Math.PI, false);
+    // Graphics.fill();
+    // Graphics.restore();
+    // Graphics.fillColor(new vec4(.5,.5,.5,1));
+    // Graphics.fill();
+
+    // let A = new mat3(
+    //   new vec3(1,0,2),
+    //   new vec3(0,1,2),
+    //   new vec3(0,0,1)
+    // )
+    //
+    // let B = new mat3(
+    //   new vec3(2,0,0),
+    //   new vec3(0,2,0),
+    //   new vec3(0,0,1)
+    // )
+    //
+    // console.log(A.mult(B).toString());
+    // console.log(A.mult(B).mult(new vec2(0,0)).toString())
 
     // Graphics.beginPath();
     // Graphics.moveTo(-100,0);

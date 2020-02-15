@@ -851,9 +851,9 @@ class mat3 {
         for (let j = 0; j < 3; j ++) {
           let sum = 0;
           for (let k = 0; k < 3; k ++) {
-            sum += this[i][k] * other[k][j];
+            sum += this[k][i] * other[j][k];
           }
-          res[j][i] = sum;
+          res[i][j] = sum;
         }
       }
       return res;
@@ -864,7 +864,7 @@ class mat3 {
         let sum = 0;
         for (let k = 0; k < 3; k ++) {
           // console.log(`sum += this[${k}][${i}] * other[${k}]`);
-          sum += this[i][k] * other[i];
+          sum += this[k][i] * other[k];
         }
         // console.log(`res[${i}] = ${sum}`);
         res[i] = sum;
@@ -890,15 +890,15 @@ class mat3 {
   static translation(a, b){
     if (a instanceof vec2) {
       return new mat3(
-        new vec3(1,0,0),
-        new vec3(0,1,0),
-        new vec3(a  ,1)
+        new vec3(1,0,a.x),
+        new vec3(0,1,a.y),
+        new vec3(0,0,1)
       )
     } else {
       return new mat3(
-        new vec3(1,0,0),
-        new vec3(0,1,0),
-        new vec3(a,b, 1)
+        new vec3(1,0,a),
+        new vec3(0,1,b),
+        new vec3(0,0, 1)
       )
     }
   }
@@ -921,8 +921,8 @@ class mat3 {
 
   static rotation(angle) {
     return new mat3(
-      new vec3(Math.cos(angle),-Math.sin(angle),0),
-      new vec3(Math.sin(angle),Math.cos(angle),0),
+      new vec3(Math.cos(angle),Math.sin(angle),0),
+      new vec3(-Math.sin(angle),Math.cos(angle),0),
       new vec3(0,0, 1)
     )
   }

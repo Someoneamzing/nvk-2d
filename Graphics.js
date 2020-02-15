@@ -10,8 +10,12 @@ function toRadians(angle) {
 }
 
 const fs = require('fs');
+const path = require('path');
 const nvk = require('nvk');
-const {vec2, ivec2, uvec2, vec3, vec4, quat, mat4, Vertex, cvec, UniformBufferObject} = require('./VMath.js');
+const earcut = require('earcut');
+const fontkit = require('fontkit');
+const getSystemFonts = require('get-system-fonts');
+const {lerp, vec2, ivec2, uvec2, vec3, vec4, quat, mat4, Vertex, cvec, UniformBufferObject, DrawCommandData, mat3} = require('./VMath.js');
 Object.assign(global, nvk);
 
 
@@ -30,16 +34,18 @@ class GraphicsClass {
   currentLayerZ = 0;
   indexCount = 0;
   vertexCount = 0;
-  vertexCapacity = 1000 * Vertex.size;
-  indexCapacity = Uint32Array.BYTES_PER_ELEMENT * 1000;
+  vertexCapacity = 40000 * Vertex.size;
+  indexCapacity = Uint16Array.BYTES_PER_ELEMENT * 1000000;
 
   vertices = new cvec(Vertex, 1000);
+  drawData = new DrawCommandData();
   // indices = new Uint16Array()
   #inDrawState = false;
   #shouldFill = true;
   #shouldStroke = true;
   #strokeColor = new vec4(0,0,0,1);
   #fillColor = new vec4(0,0,0,1);
+  #lineWidth = 2;
 
   constructor(){
 
@@ -60,7 +66,8 @@ class GraphicsClass {
     // this.run();
   }
 
-  init(){
+  async init(){
+    await this.initFonts();
     this.initVulkan();
 
   }
@@ -99,6 +106,7 @@ class GraphicsClass {
     this.createVertexBuffer();
     this.createIndexBuffer();
     this.createUniformBuffers();
+    this.createDrawDataBuffers();
     this.createDescriptorPool();
     this.createDescriptorSets();
     this.createCommandBuffers();
@@ -355,6 +363,7 @@ class GraphicsClass {
     this.createGraphicsPipeline();
     this.createFramebuffers();
     this.createUniformBuffers();
+    this.createDrawDataBuffers();
     this.createDescriptorPool();
     this.createDescriptorSets();
     this.createCommandBuffers();
@@ -808,8 +817,12 @@ class GraphicsClass {
 
   createDrawDataBuffers(){
     this.drawDataBuffers = STDVector(VkBuffer, this.swapChainImages.length);
-    // this.
-    // TODO: Add draw data buffers.
+    this.drawDataBuffersMemory = STDVector(VkDeviceMemory, this.swapChainImages.length);
+    let bufferSize = DrawCommandData.size;
+
+    for (let i = 0; i < this.swapChainImages.length; i ++) {
+      this.createBuffer(bufferSize, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, this.drawDataBuffers[i], this.drawDataBuffersMemory[i]);
+    }
   }
 
   createDescriptorPool(){
@@ -902,7 +915,8 @@ class GraphicsClass {
       vkCmdBindDescriptorSets(this.commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, this.pipelineLayout, 0, 1, [this.descriptorSets[i]], 0, null)
 
       // vkCmdDraw(this.commandBuffers[i], 3, 1, 0, 0);//this.vertices.length
-      vkCmdDrawIndexed(this.commandBuffers[i], 6, 2, 0, 0, 0);
+      // vkCmdDrawIndexed(this.commandBuffers[i], 6, 2, 0, 0, 0);
+      vkCmdDrawIndexedIndirect(this.commandBuffers[i], this.drawDataBuffers[i], 0n, 1, DrawCommandData.size);
       /*
       vkCmdDrawIndexedIndirectCountKHR(
           VkCommandBuffer                             commandBuffer,
@@ -1009,6 +1023,7 @@ class GraphicsClass {
     let indexAddress = {$: 0n};
     this.vertexCount = 0;
     this.indexCount = 0;
+    this.currentLayerZ = 0;
     if (vkMapMemory(this.device, this.vertexStagingBufferMemory, 0, this.vertexCapacity, 0, vertexAddress) !== VK_SUCCESS) {
       throw new Error("Failed to map vertex memory.")
     }
@@ -1026,6 +1041,9 @@ class GraphicsClass {
     this.copyBuffer(this.vertexStagingBuffer, this.vertexBuffer, this.vertexCapacity);
     this.copyBuffer(this.indexStagingBuffer, this.indexBuffer, this.indexCapacity);
 
+
+
+
     // console.log("Drawing Frame");
     // console.log("Waiting for fence 0x" + new BigUint64Array(this.inFlightFences[this.currentFrame].memoryBuffer, 0, 1)[0]);
     let imageIndex = {$: 0};
@@ -1042,6 +1060,22 @@ class GraphicsClass {
 
       vkWaitForFences(this.device, 1, [this.imagesInFlight[imageIndex.$]], true, Number.MAX_SAFE_INTEGER);
     }
+    let drawAddress = {$: 0n};
+    if (vkMapMemory(this.device, this.drawDataBuffersMemory[imageIndex.$], 0, DrawCommandData.size, 0, drawAddress) !== VK_SUCCESS) {
+      throw new Error("Failed to map drawDataBuffersMemory")
+    }
+
+    this.drawData.swapMemory(ArrayBuffer.fromAddress(drawAddress.$, DrawCommandData.size), 0);
+    // console.log(this.indexCount);
+    this.drawData.indexCount = this.indexCount;
+    this.drawData.instanceCount = Math.ceil(this.indexCount / 3);
+    this.drawData.firstIndex = 0;
+    this.drawData.vertexOffset = 0;
+    this.drawData.firstInstance = 0;
+
+    // console.log(deltaTime);
+    vkUnmapMemory(this.device, this.drawDataBuffersMemory[imageIndex.$]);
+
     // console.log("Marking image fence for index " + imageIndex.$ + " with fence 0x" + new BigUint64Array(this.inFlightFences[this.currentFrame].memoryBuffer, 0, 1)[0]);
     this.imagesInFlight[imageIndex.$] = this.inFlightFences[this.currentFrame];
 
@@ -1090,7 +1124,8 @@ class GraphicsClass {
     let ubo = new UniformBufferObject();
     let scale = new mat4(0.1);
     scale[3][3] = 1;
-    ubo.model = new mat4(1);//new quat(0,0,0,1).rotate(new vec3(0,0,1), Number(this.currentTime - this.startTime) / 1e9 * 90).toMat().mult(scale);
+    ubo.model = new mat4(1);
+    ubo.model[1][1] = -1;//new quat(0,0,0,1).rotate(new vec3(0,0,1), Number(this.currentTime - this.startTime) / 1e9 * 90).toMat().mult(scale);
     // ubo.model = new mat4(1);
     // ubo.model[3][3] = 1;//
     ubo.view = new mat4(1);
@@ -1098,7 +1133,7 @@ class GraphicsClass {
     // ubo.proj = mat4.perspective(toRadians(45), this.swapChainExtent.width / this.swapChainExtent.height, 0.1, 100);
     let w2 = Graphics.win.frameBufferWidth/2;
     let h2 = Graphics.win.frameBufferHeight/2;
-    ubo.proj = mat4.orthographic(-1,1,-1,1,100000,0);
+    ubo.proj = mat4.orthographic(h2, -h2, -w2, w2,-1000000,0);
     // ubo.proj[1][1] *= -1;
     // console.log(ubo);
 
@@ -1113,22 +1148,142 @@ class GraphicsClass {
   }
 
   //Graphics API functions
-  rectangle(x, y, w, h) {
 
+  #fontPathMap = new Map();
+  #fontMap = new Map();
+  #currentFont = null;
+
+  #transformStack = [];
+  #cachedTransform = new mat3(1);
+  #transformDirty = false;
+
+  scale(x, y) {
+    if (this.#transformStack.length == 0) this.save();
+    this.#transformDirty = true;
+    this.#transformStack[this.#transformStack.length-1] = this.#transformStack[this.#transformStack.length-1].scale(x,y);
   }
 
+  translate(x, y) {
+    if (this.#transformStack.length == 0) this.save();
+    this.#transformDirty = true;
+    this.#transformStack[this.#transformStack.length-1] = this.#transformStack[this.#transformStack.length-1].translate(x,y);
+  }
+
+  rotate(angle) {
+    if (this.#transformStack.length == 0) this.save();
+    this.#transformDirty = true;
+    this.#transformStack[this.#transformStack.length-1] = this.#transformStack[this.#transformStack.length-1].rotate(angle);
+  }
+
+  save(){
+    this.#transformStack.push(new mat3(1));
+  }
+
+  restore(){
+    this.#transformDirty = true;
+
+    this.#transformStack.pop();
+  }
+
+  getTransform(){
+    if (this.#transformDirty) this.#cachedTransform = this.#transformStack.reduce((acc, e)=>acc.mult(e), new mat3(1));
+    return this.#cachedTransform;
+  }
+
+  async initFonts(){
+    let fontFolder = path.resolve('fonts');
+    let paths = await getSystemFonts({additionalFolders: [fontFolder]});
+    for (let fontPath of paths) {
+      let details = path.parse(fontPath);
+      let format = details.ext;
+      let name = details.name;
+      console.log(name);
+      this.#fontPathMap.set(name, {path: fontPath, format});
+    }
+    this.loadFont("arial");
+    this.font("arial");
+  }
+
+
+  loadFont(name) {
+    if (!this.#fontPathMap.has(name)) throw new Error("Graphics: Font by name '" + name + "' could not be found. Please ensure custom fonts are placed within the 'font' subdirectory of the cwd");
+    let path = this.#fontPathMap.get(name).path;
+    let font = fontkit.openSync(path);
+    this.#fontMap.set(name, font);
+  }
+
+  font(name) {
+    if (!this.#fontMap.has(name)) throw new Error("Attempted to use unloaded font with name '" + name + "'.");
+    this.#currentFont = name;
+  }
+
+  text(text, x, y){
+    let font = this.#fontMap.get(this.#currentFont);
+    let run = font.layout(text);
+    this.beginPath();
+    this.save();
+    this.scale(.1,.1);
+    for (let charI in run.glyphs){
+      let glyph = run.glyphs[charI];
+      let pos = run.positions[charI];
+      this.save();
+      this.translate(pos.xOffset, pos.yOffset);
+      glyph.path.toFunction()(this);
+      this.restore();
+      this.fill();
+      console.log(text.charAt(charI) + ": " + glyph.path.toFunction().toString());
+      this.translate(pos.xAdvance, pos.yAdvance);
+    }
+    this.restore();
+    // TODO: Add transform matrix and stack.
+  }
+
+  fillColor(color) {
+    this.#shouldFill = true;
+    this.#fillColor = color;
+  }
+
+  strokeColor(color) {
+    this.#shouldStroke = true;
+    this.#strokeColor = color;
+  }
+
+  noFill(){
+    this.#shouldFill = false;
+  }
+
+  noStroke(){
+    this.#shouldStroke = false;
+  }
+
+
   rawTriangle(p1, p2, p3, color){
-    let i = this.vertexCount;
-    this.indices.push(i,i+1,i+3);
+    // let i = this.vertexCount;
+    this.vertices[this.vertexCount].color = color;
+    this.vertices[this.vertexCount++].pos = new vec3(p1, this.currentLayerZ);
+    this.vertices[this.vertexCount].color = color;
+    this.vertices[this.vertexCount++].pos = new vec3(p2, this.currentLayerZ);
+    this.vertices[this.vertexCount].color = color;
+    this.vertices[this.vertexCount++].pos = new vec3(p3, this.currentLayerZ);
+    this.indices.set([this.vertexCount - 3, this.vertexCount - 2,this.vertexCount - 1], this.indexCount);
+    // console.log([this.vertexCount - 3, this.vertexCount - 2,this.vertexCount - 1]);
     this.indexCount += 3;
-    this.vertices[i].pos = new vec3(p1, this.currentLayerZ);
-    this.vertices[i].color = color;
-    this.vertices[i + 1].pos = new vec3(p2, this.currentLayerZ);
-    this.vertices[i + 1].color = color;
-    this.vertices[i + 2].pos = new vec3(p3, this.currentLayerZ);
-    this.vertices[i + 2].color = color;
-    this.vertexCount += 3;
-    return [i, i+1, i+2];
+    // this.vertexCount += 3;
+    // return [i, i+1, i+2];
+  }
+
+  rawQuad(p1,p2,p3,p4, color){
+    this.vertices[this.vertexCount].color = color;
+    this.vertices[this.vertexCount++].pos = new vec3(p1, this.currentLayerZ);
+    this.vertices[this.vertexCount].color = color;
+    this.vertices[this.vertexCount++].pos = new vec3(p2, this.currentLayerZ);
+    this.vertices[this.vertexCount].color = color;
+    this.vertices[this.vertexCount++].pos = new vec3(p3, this.currentLayerZ);
+    this.vertices[this.vertexCount].color = color;
+    this.vertices[this.vertexCount++].pos = new vec3(p4, this.currentLayerZ);
+    this.indices.set([this.vertexCount - 4, this.vertexCount - 3, this.vertexCount - 2,this.vertexCount - 2, this.vertexCount - 1, this.vertexCount - 4], this.indexCount);
+    // console.log([this.vertexCount - 3, this.vertexCount - 2,this.vertexCount - 1]);
+    this.indexCount += 6;
   }
 
   rawLine(p1, p2, inDir, outDir, color, lineWidth) {
@@ -1139,7 +1294,7 @@ class GraphicsClass {
     let inLen = lineWidth / Math.cos(inGamma);
     let inPerp = new vec2(inBCNorm.y, -inBCNorm.x).rotate(-inGamma).normalised().mult(inLen);//Might need to be -gamma;
 
-    console.log(inPerp +"");
+    // console.log(inPerp +"");
 
     let outABNorm = p1.sub(p2).normalised();
     let outBCNorm = outDir.normalised();
@@ -1148,7 +1303,7 @@ class GraphicsClass {
     let outLen = lineWidth / Math.cos(outGamma);
     let outPerp = new vec2(outABNorm.y, -outABNorm.x).rotate(-outGamma).normalised().mult(-outLen);
 
-    console.log(outPerp +"");
+    // console.log(outPerp +"");
 
     // let inLen = lineWidth / (2 * Math.sin(Math.acos(inABNorm.dot(inBCNorm))));
     // // console.log(inABNorm.dot(inBCNorm));
@@ -1187,81 +1342,231 @@ class GraphicsClass {
     if (closed) {
       let inABNorm = points[points.length-1].sub(points[0]).normalised();
       let inBCNorm = points[1].sub(points[0]).normalised();
-      let inLen = lineWidth / (2 * Math.sin(Math.acos(inABNorm.dot(inBCNorm))));
-      inPerp = inABNorm.mult(inLen).add(inBCNorm.mult(inLen));
+      let inBeta = Math.acos(inABNorm.dot(inBCNorm));
+      let inGamma = Math.PI/2 - inBeta/2;
+      let inLen = lineWidth / Math.cos(inGamma);
+      inPerp = new vec2(inBCNorm.y, -inBCNorm.x).rotate(inGamma).normalised().mult(-inLen);
     } else {
       let inDir = points[1].sub(points[0]).normalised();
-      inPerp = new vec2(inDir.y, -inDir.x).mult(inLen);
+      inPerp = new vec2(inDir.y, -inDir.x).mult(lineWidth);
     }
-    let inD = p1.add(inPerp);
-    let inE = p1.sub(inPerp);
+    inPerp = this.getTransform().mult(inPerp);
+    let inD = points[0].add(inPerp);
+    let inE = points[0].sub(inPerp);
     this.vertices[this.vertexCount].color = color;
-    this.vertices[this.vertexCount++].pos = inD;
+    this.vertices[this.vertexCount++].pos = new vec3(inD, this.currentLayerZ);
     this.vertices[this.vertexCount].color = color;
-    this.vertices[this.vertexCount++].pos = inE;
+    this.vertices[this.vertexCount++].pos = new vec3(inE, this.currentLayerZ);
     for (let i = 0; i < points.length - 2; i ++) {
       let p1 = points[i];
       let p2 = points[i + 1];
       let p3 = points[i + 2];
       let outABNorm = p1.sub(p2).normalised();
       let outBCNorm = p3.sub(p2).normalised();
-      let outLen = lineWidth / (2 * Math.sin(Math.acos(outABNorm.dot(outBCNorm))));
-      let outPerp = outABNorm.mult(outLen).add(outBCNorm.mult(outLen));
+      let outBeta = Math.acos(outABNorm.dot(outBCNorm));
+      let outGamma = Math.PI/2 - outBeta/2;
+      let outLen = lineWidth / Math.cos(outGamma);
+      let outPerp = this.getTransform().mult(new vec2(outABNorm.y, -outABNorm.x).rotate(-outGamma).normalised().mult(outLen));
       let outD = p2.add(outPerp);
       let outE = p2.sub(outPerp);
       this.vertices[this.vertexCount].color = color;
-      this.vertices[this.vertexCount++].pos = outD;
+      this.vertices[this.vertexCount++].pos = new vec3(outD, this.currentLayerZ);
       this.vertices[this.vertexCount].color = color;
-      this.vertices[this.vertexCount++].pos = outE;
-      let j = this.vertexCount;
+      this.vertices[this.vertexCount++].pos = new vec3(outE, this.currentLayerZ);
+      let j = this.vertexCount - 1;
       this.indices.set([j-3,j-1,j-2,j-1,j,j-2], this.indexCount);
       this.indexCount += 6;
     }
     if (closed){
-      let p1 = points[i];
-      let p2 = points[i + 1];
+      let p1 = points[points.length-2];
+      let p2 = points[points.length-1];
       let p3 = points[0];
       let outABNorm = p1.sub(p2).normalised();
       let outBCNorm = p3.sub(p2).normalised();
-      let outLen = lineWidth / (2 * Math.sin(Math.acos(outABNorm.dot(outBCNorm))));
-      let outPerp = outABNorm.mult(outLen).add(outBCNorm.mult(outLen));
+      let outBeta = Math.acos(outABNorm.dot(outBCNorm));
+      let outGamma = Math.PI/2 - outBeta/2;
+      let outLen = lineWidth / Math.cos(outGamma);
+      let outPerp = this.getTransform().mult(new vec2(outABNorm.y, -outABNorm.x).rotate(-outGamma).normalised().mult(-outLen));
       let outD = p2.add(outPerp);
       let outE = p2.sub(outPerp);
       this.vertices[this.vertexCount].color = color;
-      this.vertices[this.vertexCount++].pos = outD;
+      this.vertices[this.vertexCount++].pos = new vec3(outD, this.currentLayerZ);
       this.vertices[this.vertexCount].color = color;
-      this.vertices[this.vertexCount++].pos = outE;
-      let j = this.vertexCount;
-      let k = this.vertexCount - 2 * (points.length - 2);
-      this.indices.set([j-3,j-1,j-2,j-1,j,j-2,j-1,k-1,j,k-1,k,j], this.indexCount);
+      this.vertices[this.vertexCount++].pos = new vec3(outE, this.currentLayerZ);
+      let j = this.vertexCount-1;
+      let k = this.vertexCount - 2 * (points.length - 2) - 3;
+      this.indices.set([j-3,j-1,j-2,j-1,j,j-3,j-1,k-1,j,k,k-1,j-1], this.indexCount);//
+      // console.log(this.indices.slice(this.indexCount, this.indexCount + 12));
+
       this.indexCount += 12;
+      // this.indexCount += 6;
     } else {
-      let p1 = points[i];
-      let p2 = points[i + 1];
+      let p1 = points[points.length-2];
+      let p2 = points[points.length-1];
       let outDir = p2.sub(p1).normalised();
-      let outPerp = new vec2(outDir.y, -outDir.x).mult(inLen);
+      let outPerp = this.getTransform().mult(new vec2(outDir.y, -outDir.x).mult(lineWidth));
       let outD = p2.add(outPerp);
       let outE = p2.sub(outPerp);
       this.vertices[this.vertexCount].color = color;
-      this.vertices[this.vertexCount++].pos = outD;
+      this.vertices[this.vertexCount++].pos = new vec3(outD, this.currentLayerZ);
       this.vertices[this.vertexCount].color = color;
-      this.vertices[this.vertexCount++].pos = outE;
-      let j = this.vertexCount;
+      this.vertices[this.vertexCount++].pos = new vec3(outE, this.currentLayerZ);
+      let j = this.vertexCount-1;
       this.indices.set([j-3,j-1,j-2,j-1,j,j-2], this.indexCount);
       this.indexCount += 6;
     }
   }
 
   triangle(p1, p2, p3) {
-    if (this.shouldFill) {
-      this.rawTriangle(p1, p2, p3, this.fillColor)
-      this.currentLayerZ ++;
+    let t = this.getTransform();
+    p1 = t.mult(p1);
+    p2 = t.mult(p2);
+    p3 = t.mult(p3);
+    if (this.#shouldFill) {
+      this.rawTriangle(p1, p2, p3, this.#fillColor)
+
     }
-    if (this.shouldStroke) {
-      this.rawLineList([p1, p2, p3], this.strokeColor, this.lineWidth, true);
+    if (this.#shouldStroke) {
+      this.rawLineList([p1, p2, p3], this.#strokeColor, this.#lineWidth, true);
     }
+    this.currentLayerZ ++;
 
   }
+
+  rectangle(x, y, w, h) {
+    let p1 = new vec2(x, y);
+    let p2 = new vec2(x + w, y);
+    let p3 = new vec2(x + w, y - h);
+    let p4 = new vec2(x, y - h);
+    p1 = t.mult(p1);
+    p2 = t.mult(p2);
+    p3 = t.mult(p3);
+    p4 = t.mult(p4);
+    if (this.#shouldFill) {
+      this.rawQuad(p1, p2, p3, p4, this.#fillColor);
+      // this.rawTriangle(p3, p4, p1, this.#fillColor);
+    }
+    if (this.#shouldStroke) {
+      this.rawLineList([p1, p2, p3, p4], this.#strokeColor, this.#lineWidth, true);
+    }
+    this.currentLayerZ ++;
+
+  }
+
+  #subPath = [];
+
+  beginPath(){
+    this.#subPath = [];
+  }
+
+  closePath(){
+    let subSubPath = this.#subPath[this.#subPath.length - 1];
+    if (subSubPath.length <= 1 || subSubPath.closed) return;
+    subSubPath.closed = true;
+  }
+
+  moveTo(x, y){
+    // console.log(`moveTo(${x}, ${y})`);
+    this.#subPath.push([this.getTransform().mult(new vec2(x, y))]);
+  }
+
+  lineTo(x, y){
+
+    let subSubPath = this.#subPath[this.#subPath.length - 1];
+    if (subSubPath.closed) {
+      subSubPath = this.#subPath[this.#subPath.push([subSubPath[subSubPath.length - 1]]) - 1];
+    }
+    let point = this.getTransform().mult(new vec2(x, y))
+    // console.log(`lineTo(${x}, ${y}) * ${this.#transformStack} => ${point}`);
+    subSubPath.push(point);
+  }
+
+  #curveGamma = 10;
+
+  bezierCurveTo(p1x, p1y, p2x, p2y, x, y){
+    let p1 = this.getTransform().mult(new vec2(p1x, p1y));
+    let p2 = this.getTransform().mult(new vec2(p2x, p2y));
+    let end = this.getTransform().mult(new vec2(x, y))
+    let subSubPath = this.#subPath[this.#subPath.length - 1];
+    let start = subSubPath[subSubPath.length - 1];
+    let C = (t)=>{
+      let mid = lerp(p1, p2, t);
+      return lerp(lerp(start, mid, t),lerp(mid, end, t),t);
+    }
+
+    let numSegments = Math.max(10, Math.ceil(Math.sqrt(p1.sub(start).mag2() + p2.sub(end).mag2()) / this.#curveGamma) + 1);
+    for (let i = 0; i <= numSegments; i ++) {
+      let t = 1/numSegments * i;
+      let vert = C(t);
+      // console.log(t);
+      subSubPath.push(vert);
+    }
+  }
+
+  quadraticCurveTo(px, py, x, y){
+    let p = this.getTransform().mult(new vec2(px, py));
+    let end = this.getTransform().mult(new vec2(x, y));
+    let subSubPath = this.#subPath[this.#subPath.length - 1];
+    let start = subSubPath[subSubPath.length - 1];
+    let C = (t)=>{
+      return lerp(lerp(start, p, t),lerp(p, end, t),t);
+    }
+    let numSegments = Math.ceil(p.sub(start).mag2() / this.#curveGamma);
+    for (let i = 0; i < numSegments; i ++) {
+      subSubPath.push(C(1/numSegments * i));
+    }
+  }
+
+  arc(x, y, radius, startAngle, endAngle, anticlockwise){
+    let t = this.getTransform();
+    let range = (endAngle - startAngle);
+    let numSegments = Math.ceil(range * (t.mult(new vec2(radius, 0)).sub(t.mult(new vec2(0,0))).mag()) / 10);
+    console.log(numSegments);
+    let subSubPath = this.#subPath[this.#subPath.length - 1];
+    if (!subSubPath) {
+      this.#subPath.push([]);
+      subSubPath = this.#subPath[this.#subPath.length - 1];
+    }
+    for (let i = 0; i < numSegments; i ++) {
+      subSubPath.push(t.mult(new vec2(radius, 0)).rotate(startAngle + range / numSegments * i));
+    }
+  }
+
+  arcTo(){}//TODO: Find algorithm for finding center point of tangent circle;
+
+  ellipse(){}
+
+  rect(){}
+
+
+  fill(){
+    for (let subSubPath of this.#subPath) {
+      if (subSubPath.length >= 3) {
+        // console.log(subSubPath);
+        let i = this.vertexCount;
+        for (let vert of subSubPath) {
+          this.vertices[this.vertexCount].color = this.#fillColor;
+          this.vertices[this.vertexCount++].pos = new vec3(vert, this.currentLayerZ);
+        }
+        let data = earcut.flatten([subSubPath]);
+        let indices = earcut(data.vertices, data.holes, data.dimensions);
+        // console.log(indices);
+        this.indices.set(indices.map(e=>e+i), this.indexCount);
+        this.indexCount += indices.length;
+      }
+    }
+  }
+
+  stroke(){
+    for (let subSubPath of this.#subPath) {
+      if (subSubPath.length > 1) this.rawLineList(subSubPath, this.#strokeColor, this.#lineWidth, true&&subSubPath.closed);
+    }
+  }
+
+  strokeWeight(val){
+    this.#lineWidth = val;
+  }
+
 
 }
 

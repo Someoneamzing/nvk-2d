@@ -30,19 +30,19 @@ class EngineClass {
 
   }
 
-  start(game) {
+  async start(game) {
     if (game) {
       if (game instanceof Engine.Game) {
         this.game = game;
       } else throw new TypeError("Engine: start() expects argument 1 to be of type Game. Got '" + game.constructor.name + "'.")
     }
-    this.init();
+    await this.init();
     this.run();
   }
 
-  init() {
-    Graphics.init();
-    this.game.init();
+  async init() {
+    await Graphics.init();
+    await this.game.init();
   }
 
   run() {

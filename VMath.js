@@ -3,7 +3,18 @@ function toRadians(angle) {
   return Math.PI / 180 * angle;
 }
 
+function lerp(a, b, t) {
+  if (a instanceof vec2 || a instanceof vec3 || a instanceof vec4) {
+    return a.add(b.sub(a).mult(t));
+  } else if (!Number.isNaN(a)){
+    return a + (b-a) * t;
+  }
+}
+
 class vec2 {
+
+  get length(){return 2;}
+
   constructor(a, b) {
     if (a instanceof ArrayBuffer) {
       this.float32 = new Float32Array(a, b, 2);
@@ -19,6 +30,10 @@ class vec2 {
         this.float32[1] = a.y;
       }
     }
+  }
+
+  static randomUnit(){
+    return new vec2(1,0).rotate(Math.random() * 360);
   }
 
   get 0() {
@@ -77,8 +92,12 @@ class vec2 {
     return this.x * o.y - this.y * o.x;
   }
 
-  length(){
+  mag(){
     return Math.sqrt(this.x * this.x + this.y * this.y);
+  }
+
+  mag2(){
+    return this.x * this.x + this.y * this.y;
   }
 
   mult(val) {
@@ -95,7 +114,7 @@ class vec2 {
   }
 
   normalised(){
-    let length = this.length();
+    let length = this.mag();
     return new vec2(this.x/length,this.y/length);
   }
 
@@ -116,6 +135,9 @@ class vec2 {
 }
 
 class ivec2 {
+
+  get length(){return 2;}
+
   constructor(a, b) {
     if (a instanceof ArrayBuffer) {
       this.float32 = new Int32Array(a, b, 2);
@@ -178,6 +200,9 @@ class ivec2 {
 }
 
 class uvec2 {
+
+  get length(){return 2;}
+
   constructor(a, b) {
     if (a instanceof ArrayBuffer) {
       this.float32 = new Uint32Array(a, b, 2);
@@ -238,6 +263,9 @@ class uvec2 {
 }
 
 class vec3 {
+
+  get length(){return 3;}
+
   constructor(a, b, c) {
     if (a instanceof ArrayBuffer) {
       this.float32 = new Float32Array(a, b, 3);
@@ -383,12 +411,16 @@ class vec3 {
                      this.x * o.y - this.y * o.x);
   }
 
-  length(){
+  mag(){
     return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
   }
 
+  mag2(){
+    return this.x * this.x + this.y * this.y + this.z * this.z;
+  }
+
   normalised(){
-    let length = this.length();
+    let length = this.mag();
     return new vec3(this.x/length,this.y/length,this.z/length);
   }
 
@@ -400,6 +432,9 @@ class vec3 {
 }
 
 class vec4 {
+
+  get length(){return 4;}
+
   constructor(a, b, c, d) {
     if (a instanceof ArrayBuffer) {
       this.float32 = new Float32Array(a, b, 4);
@@ -452,6 +487,14 @@ class vec4 {
         this.float32[3] = a.w;
       }
     }
+  }
+
+  mag(){
+    return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z + this.w + this.w);
+  }
+
+  mag2(){
+    return this.x * this.x + this.y * this.y + this.z * this.z + this.w + this.w;
   }
 
   swapMemory(buffer, offset) {
@@ -747,6 +790,148 @@ class quat {
   }
 }
 
+class mat3 {
+  constructor(a,b,c) {
+    if (a instanceof ArrayBuffer) {
+      this.float32 = new Float32Array(a, b, 9);
+      this.buffer = this.float32.buffer;
+    } else {
+      // //console.trace("Allocating new memory");
+      this.float32 = new Float32Array(9);
+      this.buffer = this.float32.buffer;
+    }
+    this._0 = new vec3(this.buffer, this.float32.byteOffset);
+    this._1 = new vec3(this.buffer, this.float32.byteOffset + vec3.size);
+    this._2 = new vec3(this.buffer, this.float32.byteOffset + vec3.size * 2);
+    if (typeof a == 'number') {
+      this._0.x = a;
+      this._1.y = a;
+      this._2.z = a;
+    } else if (a instanceof vec3) {
+      this[0] = a;
+      this[1] = b;
+      this[2] = c;
+    }
+  }
+
+  get 0() {
+    return this._0;
+  }
+
+  get 1() {
+    return this._1;
+  }
+
+  get 2() {
+    return this._2;
+  }
+
+  set 0(val) {
+    this._0.x = val.x;
+    this._0.y = val.y;
+    this._0.z = val.z;
+  }
+
+  set 1(val) {
+    this._1.x = val.x;
+    this._1.y = val.y;
+    this._1.z = val.z;
+  }
+
+  set 2(val) {
+    this._2.x = val.x;
+    this._2.y = val.y;
+    this._2.z = val.z;
+  }
+
+  mult(other) {
+    if (other instanceof mat3) {
+      let res = new mat3();
+      for (let i = 0; i < 3; i ++) {
+        for (let j = 0; j < 3; j ++) {
+          let sum = 0;
+          for (let k = 0; k < 3; k ++) {
+            sum += this[i][k] * other[k][j];
+          }
+          res[j][i] = sum;
+        }
+      }
+      return res;
+    } else if (other instanceof vec2) {
+      let res = new vec3()
+      other = new vec3(other, 1);
+      for (let i = 0; i < 3; i ++) {
+        let sum = 0;
+        for (let k = 0; k < 3; k ++) {
+          // console.log(`sum += this[${k}][${i}] * other[${k}]`);
+          sum += this[i][k] * other[i];
+        }
+        // console.log(`res[${i}] = ${sum}`);
+        res[i] = sum;
+      }
+      return new vec2(res.x, res.y);
+    }
+
+  }
+
+  translate(a, b) {
+    return this.mult(mat3.translation(a, b));
+  }
+
+  scale(a, b) {
+    return this.mult(mat3.scale(a, b));
+
+  }
+
+  rotate(angle) {
+    return this.mult(mat3.rotation(angle));
+  }
+
+  static translation(a, b){
+    if (a instanceof vec2) {
+      return new mat3(
+        new vec3(1,0,0),
+        new vec3(0,1,0),
+        new vec3(a  ,1)
+      )
+    } else {
+      return new mat3(
+        new vec3(1,0,0),
+        new vec3(0,1,0),
+        new vec3(a,b, 1)
+      )
+    }
+  }
+
+  static scale(a, b){
+    if (a instanceof vec2) {
+      return new mat3(
+        new vec3(a.x,0,0),
+        new vec3(0,a.y,0),
+        new vec3(0, 0, 1)
+      )
+    } else {
+      return new mat3(
+        new vec3(a,0,0),
+        new vec3(0,b,0),
+        new vec3(0,0, 1)
+      )
+    }
+  }
+
+  static rotation(angle) {
+    return new mat3(
+      new vec3(Math.cos(angle),-Math.sin(angle),0),
+      new vec3(Math.sin(angle),Math.cos(angle),0),
+      new vec3(0,0, 1)
+    )
+  }
+
+  toString(){
+    return `mat3(${this[0][0]}, ${this[1][0]}, ${this[2][0]}\n     ${this[0][1]}, ${this[1][1]}, ${this[2][1]}\n     ${this[0][2]}, ${this[1][2]}, ${this[2][2]})`
+  }
+}
+
 class mat4 {
   constructor(a, b, c, d) {
     if (a instanceof ArrayBuffer) {
@@ -836,17 +1021,30 @@ class mat4 {
   }
 
   mult(other) {
-    let res = new mat4();
-    for (let i = 0; i < 4; i ++) {
-      for (let j = 0; j < 4; j ++) {
+    if (other instanceof mat4) {
+      let res = new mat4();
+      for (let i = 0; i < 4; i ++) {
+        for (let j = 0; j < 4; j ++) {
+          let sum = 0;
+          for (let k = 0; k < 4; k ++) {
+            sum += this[k][i] * other[j][k];
+          }
+          res[j][i] = sum;
+        }
+      }
+      return res;
+    } else if (other instanceof vec3) {
+      let res = new vec4()
+      for (let i = 0; i < 4; i ++) {
         let sum = 0;
         for (let k = 0; k < 4; k ++) {
-          sum += this[k][i] * other[j][k];
+          sum += this[k][i] * other[k];
         }
-        res[j][i] = sum;
+        res[i] = sum;
       }
+      return new vec3(res.x, res.y, res.z);
     }
-    return res;
+
   }
 
   toQuat(){
@@ -1182,4 +1380,4 @@ class UniformBufferObject {
 }
 
 
-module.exports = {vec2, vec3, vec4, quat, mat4, Vertex, cvec, UniformBufferObject};
+module.exports = {lerp, vec2, vec3, vec4, quat, mat3, mat4, Vertex, cvec, UniformBufferObject, DrawCommandData};

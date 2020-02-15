@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <title>CanvasRenderingContext2D Tests</title>
+  </head>
+  <body>
+    <canvas id="canvas" width="500" height="500"></canvas>
+    <script type="text/javascript">
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+
+      ctx.lineWidth = 3;
+
+      ctx.beginPath();
+      ctx.moveTo(20, 140);   // Move pen to bottom-left corner
+      ctx.scale(10,1);   // Line to top corner
+      ctx.lineTo(120, 10);
+      ctx.lineTo(220, 140);
+      // ctx.scale(.1,1) // Line to bottom-right corner
+      ctx.closePath();       // Line to bottom-left corner
+      ctx.stroke();
+    </script>
+  </body>
+</html>
